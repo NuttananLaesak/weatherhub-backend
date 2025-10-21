@@ -12,8 +12,11 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        $schedule->command('ingest:weather')->cron('0 */3 * * *');
-        // $schedule->command('inspire')->hourly();
+        $schedule->command('ingest:weather')->cron('0 * * * *');
+        // $schedule->command('ingest:weather')->cron('0 */2 * * *');
+        // $schedule->command('ingest:weather')->cron('0 */3 * * *');
+        // $schedule->command('ingest:weather')->cron('* * * * *');
+        // run ingest:weather every 3 hours
     }
 
     /**

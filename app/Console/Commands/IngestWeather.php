@@ -6,7 +6,9 @@ use Illuminate\Console\Command;
 use App\Models\Location;
 use App\Models\WeatherHourly;
 use App\Models\WeatherDaily;
+use App\Models\IngestJob;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use Carbon\Carbon;
 
 class IngestWeather extends Command
@@ -24,6 +26,14 @@ class IngestWeather extends Command
         foreach ($locations as $location) {
             $this->info("Processing location: {$location->name} ({$location->lat}, {$location->lon})");
 
+            // Rate-limit key per location
+            $rateKey = 'ingest:' . $location->id;
+            if (RateLimiter::tooManyAttempts($rateKey, 5)) {
+                $this->warn("Rate limit reached for location {$location->name}, skipping...");
+                continue;
+            }
+            RateLimiter::hit($rateKey, 3600); // reset 1 hour
+
             // กำหนดวันที่เริ่มต้นและสิ้นสุด
             if ($this->option('backfill')) {
                 [$startDate, $endDate] = explode(',', $this->option('backfill'));
@@ -31,13 +41,29 @@ class IngestWeather extends Command
                 $endDate = Carbon::parse($endDate);
             } else {
                 $timezone = $location->timezone;
-                $startDate = Carbon::today($timezone)->subDays(7); // 7 วันก่อนหน้า
-                $endDate = Carbon::today($timezone)->addDay();    // วันถัดไป
+                $startDate = Carbon::today($timezone)->subDays(7);
+                $endDate = Carbon::today($timezone)->addDay();
             }
 
-            // Loop วัน
             for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
                 $this->info("Processing {$location->name} - Date: " . $date->toDateString());
+
+                // ตรวจสอบว่ามีข้อมูล hourly แล้วหรือยัง
+                $existingHourlyData = WeatherHourly::where('location_id', $location->id)
+                    ->whereDate('timestamp', $date->toDateString())
+                    ->exists();
+
+                if ($existingHourlyData) {
+                    $this->info("Hourly data already exists for {$location->name} on {$date->toDateString()}, skipping hourly ingestion.");
+                    continue; // ข้ามไปที่วันถัดไปถ้ามีข้อมูล hourly แล้ว
+                }
+
+                $ingestJob = IngestJob::create([
+                    'location_id' => $location->id,
+                    'type' => 'hourly',
+                    'status' => 'pending',
+                    'note' => null,
+                ]);
 
                 $url = 'https://api.open-meteo.com/v1/forecast';
                 $params = [
@@ -52,21 +78,24 @@ class IngestWeather extends Command
                 $this->info("Fetching: " . $url . '?' . http_build_query($params));
 
                 try {
-                    $response = Http::get($url, $params);
+                    $response = Http::timeout(10)->retry(3, 1000)->get($url, $params);
 
                     if (!$response->successful()) {
-                        $this->error("Failed to fetch data for {$location->name} - {$date->toDateString()}");
-                        continue; // ข้ามวันนี้ ไปวันถัดไป
+                        $note = "Failed to fetch data: " . $response->status();
+                        $ingestJob->update(['status' => 'failed', 'note' => $note]);
+                        $this->error($note);
+                        continue;
                     }
 
                     $data = $response->json();
-
                     $hourlyCount = isset($data['hourly']['time']) ? count($data['hourly']['time']) : 0;
                     $this->info("Hourly records: " . $hourlyCount);
 
-                    if ($hourlyCount === 0) continue;
+                    if ($hourlyCount === 0) {
+                        $ingestJob->update(['status' => 'failed', 'note' => 'No hourly data']);
+                        continue;
+                    }
 
-                    // Update hourly
                     foreach ($data['hourly']['time'] as $i => $time) {
                         WeatherHourly::updateOrCreate(
                             ['location_id' => $location->id, 'timestamp' => $time],
@@ -80,10 +109,19 @@ class IngestWeather extends Command
                         );
                     }
 
-                    // Update daily summary
                     $hourlyData = WeatherHourly::where('location_id', $location->id)
                         ->whereDate('timestamp', $date->toDateString())
                         ->get();
+
+                    // ตรวจสอบว่ามีข้อมูล daily แล้วหรือยัง
+                    $existingDailyData = WeatherDaily::where('location_id', $location->id)
+                        ->whereDate('date', $date->toDateString())
+                        ->exists();
+
+                    if ($existingDailyData) {
+                        $this->info("Daily data already exists for {$location->name} on {$date->toDateString()}, skipping daily ingestion.");
+                        continue; // ข้ามการประมวลผล daily ถ้ามีข้อมูลแล้ว
+                    }
 
                     WeatherDaily::updateOrCreate(
                         ['location_id' => $location->id, 'date' => $date->toDateString()],
@@ -95,10 +133,11 @@ class IngestWeather extends Command
                         ]
                     );
 
+                    $ingestJob->update(['status' => 'success']);
                     $this->info("Daily summary updated for {$location->name}");
                 } catch (\Exception $e) {
-                    $this->error("Error fetching {$location->name} - {$date->toDateString()}: " . $e->getMessage());
-                    continue; // ข้ามวัน/ข้าม location ต่อไป
+                    $ingestJob->update(['status' => 'failed', 'note' => $e->getMessage()]);
+                    $this->error("Error: " . $e->getMessage());
                 }
             }
         }

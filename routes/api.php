@@ -7,6 +7,7 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\IngestController;
 use App\Http\Controllers\WeatherController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\ExportController;
 
 Route::post('/auth/login',[AuthController::class,'login']);
 
@@ -23,4 +24,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/weather/daily',[WeatherController::class,'daily']);
 
     Route::get('/health',[HealthController::class,'index']);
+    Route::get('/export/csv', [ExportController::class, 'exportCsv']);
 });
