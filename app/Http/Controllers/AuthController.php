@@ -15,12 +15,17 @@ class AuthController extends Controller
             'password'=>'required|string'
         ]);
 
-        $user = User::where('email',$request->email)->first();
-        if(!$user || !Hash::check($request->password,$user->password)){
-            return response()->json(['message'=>'Invalid credentials'],401);
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Email not found'], 404);
+        }
+
+        if (!Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Password is incorrect'], 401);
         }
 
         $token = $user->createToken('api-token')->plainTextToken;
-        return response()->json(['token'=>$token]);
+        return response()->json(['token' => $token]);
     }
 }
