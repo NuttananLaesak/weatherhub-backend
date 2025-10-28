@@ -20,7 +20,7 @@ php artisan key:generate
 php artisan migrate
 
 # Seed sample data for login
-php artisan db:seed
+php artisan db:seed --class=UserSeeder
 
 # Run server
 php artisan serve
