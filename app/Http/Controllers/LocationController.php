@@ -24,11 +24,6 @@ class LocationController extends Controller
 
         $location = Location::create($request->all());
 
-        // ➤ รัน ingestion อัตโนมัติหลังเพิ่ม
-        Artisan::call('ingest:weather', [
-            '--backfill' => now()->subDays(7)->toDateString() . ',' . now()->addDay()->toDateString()
-        ]);
-
         return response()->json($location);
     }
 
