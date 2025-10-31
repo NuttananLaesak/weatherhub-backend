@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
-// use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Models\Location;
 use App\Models\WeatherHourly;
 use App\Models\WeatherDaily;
@@ -11,7 +11,7 @@ use Carbon\Carbon;
 
 class WeatherIngestionTest extends TestCase
 {
-    // use RefreshDatabase;
+    use RefreshDatabase;
 
     /** @test */
     public function it_upserts_hourly_weather_without_duplicates()

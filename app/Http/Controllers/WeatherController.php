@@ -5,12 +5,25 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\WeatherHourly;
 use App\Models\WeatherDaily;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class WeatherController extends Controller
 {
     /**
-     * ดึงข้อมูลล่าสุดแบบ hourly ของสถานที่
+     * Get Timezone Location frome location_id
+     */
+    private function getTimezone(int $locationId): string
+    {
+        return DB::table('locations')
+            ->where('id', $locationId)
+            ->value('timezone') ?? 'UTC';
+    }
+
+      /**
+     *  Get Lastest Weather Realtime from Timezone Location
      */
     public function latest(Request $request)
     {
@@ -22,16 +35,51 @@ class WeatherController extends Controller
         $cacheKey = "latest_weather_{$locationId}";
 
         $data = Cache::remember($cacheKey, 60, function () use ($locationId) {
-            return WeatherHourly::where('location_id', $locationId)
-                ->orderByDesc('timestamp')
-                ->first();
-        });
 
+            // get timezone
+            $timezone = $this->getTimezone($locationId);
+            $now = Carbon::now($timezone);
+
+            // get lat,lon from location
+            $location = DB::table('locations')->find($locationId);
+            if (!$location) {
+                return response()->json(['error' => 'Location not found'], 404);
+            }
+
+            // fetch latest weather api
+            $url = 'https://api.open-meteo.com/v1/forecast';
+            $params = [
+                'latitude' => $location->lat,
+                'longitude' => $location->lon,
+                'current_weather' => 'true', 
+                'timezone' => $location->timezone,
+            ];
+
+            try {
+                $response = Http::timeout(10)->retry(3, 1000)->get($url, $params);
+
+                if (!$response->successful()) {
+                    return response()->json(['error' => 'API request failed', 'message' => $response->body()], 500);
+                }
+
+                $data = $response->json();
+
+                return [
+                    'timestamp' => $data['current_weather']['time'],
+                    'temp_c' => $data['current_weather']['temperature'],
+                    'wind_ms' => $data['current_weather']['windspeed'],
+                    'wind_direction' => $data['current_weather']['winddirection'],
+                    'weather_code' => $data['current_weather']['weathercode'],
+                ];
+            } catch (\Exception $e) {
+                return response()->json(['error' => 'Error while fetching data from Open-Meteo API', 'message' => $e->getMessage()], 500);
+            }
+        });
         return response()->json($data);
     }
 
     /**
-     * ดึงข้อมูล hourly ภายในช่วงวันที่
+     *  Get Hourly Weather
      */
     public function hourly(Request $request)
     {
@@ -50,7 +98,7 @@ class WeatherController extends Controller
     }
 
     /**
-     * ดึงข้อมูล daily ภายในช่วงวันที่
+     * Get Daily Weather
      */
     public function daily(Request $request)
     {

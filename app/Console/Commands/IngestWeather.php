@@ -34,7 +34,7 @@ class IngestWeather extends Command
             }
             RateLimiter::hit($rateKey, 3600); // reset 1 hour
 
-            // กำหนดวันที่เริ่มต้นและสิ้นสุด
+            // Choose Start and End
             if ($this->option('backfill')) {
                 [$startDate, $endDate] = explode(',', $this->option('backfill'));
                 $startDate = Carbon::parse($startDate);
@@ -48,14 +48,14 @@ class IngestWeather extends Command
             for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
                 $this->info("Processing {$location->name} - Date: " . $date->toDateString());
 
-                // ตรวจสอบว่ามีข้อมูล hourly แล้วหรือยัง
+                // Check Data Hourly is Already Have ?
                 $existingHourlyData = WeatherHourly::where('location_id', $location->id)
                     ->whereDate('timestamp', $date->toDateString())
                     ->exists();
 
                 if ($existingHourlyData) {
                     $this->info("Hourly data already exists for {$location->name} on {$date->toDateString()}, skipping hourly ingestion.");
-                    continue; // ข้ามไปที่วันถัดไปถ้ามีข้อมูล hourly แล้ว
+                    continue; // Skip If Hourly is Already Have
                 }
 
                 $ingestJob = IngestJob::create([
@@ -113,14 +113,14 @@ class IngestWeather extends Command
                         ->whereDate('timestamp', $date->toDateString())
                         ->get();
 
-                    // ตรวจสอบว่ามีข้อมูล daily แล้วหรือยัง
+                    // Check Data Daily is Already Have ?
                     $existingDailyData = WeatherDaily::where('location_id', $location->id)
                         ->whereDate('date', $date->toDateString())
                         ->exists();
 
                     if ($existingDailyData) {
                         $this->info("Daily data already exists for {$location->name} on {$date->toDateString()}, skipping daily ingestion.");
-                        continue; // ข้ามการประมวลผล daily ถ้ามีข้อมูลแล้ว
+                        continue; // Skip If Dairy is Already Have
                     }
 
                     WeatherDaily::updateOrCreate(

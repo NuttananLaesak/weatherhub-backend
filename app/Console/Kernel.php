@@ -12,9 +12,15 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-         // $schedule->command('ingest:weather')->cron('* * * * *');
+        // $schedule->command('ingest:weather')->cron('* * * * *');
+        // run ingest:weather every 1 minutes
+
         // $schedule->command('ingest:weather')->cron('0 * * * *');
+        // run ingest:weather every 1 hours
+
         // $schedule->command('ingest:weather')->cron('0 */2 * * *');
+        // run ingest:weather every 2 hours
+
         $schedule->command('ingest:weather')->cron('0 */3 * * *');
         // run ingest:weather every 3 hours
     }
